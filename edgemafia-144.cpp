@@ -5,17 +5,15 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <unordered_map>
+#include <functional>
+#include <cstdlib>
 
 enum Role {
 ROLE_MAFIA = 0,
 ROLE_VILLAGER = 1,
 ROLE_DOCTOR = 2,
 ROLE_DETECTIVE = 3
-};
-
-enum Phase {
-PHASE_NIGHT = 0,
-PHASE_DAY = 1
 };
 
 static std::mt19937 rng((unsigned)std::time(nullptr));
@@ -56,6 +54,69 @@ if (r <= 0.0f) return candidates[i];
 return candidates.back();
 }
 
+struct QKey {
+int state;
+int action;
+bool operator==(const QKey &other) const {
+return state == other.state && action == other.action;
+}
+};
+
+struct QKeyHash {
+std::size_t operator()(const QKey &k) const {
+return std::hash<int>()(k.state ^ (k.action << 1));
+}
+};
+
+class QLearning {
+public:
+float alpha = 0.1f;
+float gamma = 0.9f;
+float epsilon = 0.1f;
+std::unordered_map<QKey, float, QKeyHash> Q;
+
+float getQ(int state, int action) {
+QKey key{state, action};
+auto it = Q.find(key);
+if (it == Q.end()) return 0.0f;
+return it->second;
+}
+
+int chooseAction(int state, const std::vector<int> &actions) {
+if (actions.empty()) return -1;
+if ((float)std::rand() / RAND_MAX < epsilon) {
+return actions[randInt((int)actions.size())];
+}
+float best = -1e9f;
+int bestAction = actions[0];
+for (int a : actions) {
+float q = getQ(state, a);
+if (q > best) {
+best = q;
+bestAction = a;
+}
+}
+return bestAction;
+}
+
+void update(int state, int action, float reward, int nextState,
+const std::vector<int> &nextActions) {
+float maxNext = 0.0f;
+for (int a : nextActions) {
+maxNext = std::max(maxNext, getQ(nextState, a));
+}
+QKey key{state, action};
+float oldQ = getQ(state, action);
+Q[key] = oldQ + alpha * (reward + gamma * maxNext - oldQ);
+}
+};
+
+int getStateFromTrust(float trust) {
+if (trust < -0.3f) return 0; // enemy
+if (trust < 0.3f)  return 1; // neutral
+return 2;                    // ally
+}
+
 int main() {
 int n;
 std::cout << "Number of AI players (>=6 recommended): ";
@@ -76,6 +137,10 @@ std::vector<float> deceit(n);
 
 std::vector<float> trust(n * n, 0.0f);
 std::vector<float> liking(n * n, 0.0f);
+
+std::vector<QLearning> brains(n);
+std::vector<int> lastState(n, -1);
+std::vector<int> lastAction(n, -1);
 
 auto idx = [n](int i, int j) { return i * n + j; };
 
@@ -265,7 +330,34 @@ if (s <= 0.0f) s = 0.05f;
 cand.push_back(j);
 score.push_back(std::max(0.01f, s));
 }
-return weightedChoice(cand, score);
+
+if (cand.empty()) {
+lastState[self] = -1;
+lastAction[self] = -1;
+return -1;
+}
+
+int bestIdx = 0;
+float bestScore = score[0];
+for (size_t k = 1; k < cand.size(); ++k) {
+if (score[k] > bestScore) {
+bestScore = score[k];
+bestIdx = (int)k;
+}
+}
+int target = cand[bestIdx];
+
+float t = trust[idx(self, target)];
+int state = getStateFromTrust(t);
+
+std::vector<int> actions = {0, 1};
+int action = brains[self].chooseAction(state, actions);
+
+lastState[self] = state;
+lastAction[self] = action;
+
+if (action == 0) return -1;
+return target;
 };
 
 auto updateTrustAfterLynch = [&](int lyncher, int target, bool wasMafia) {
@@ -299,7 +391,7 @@ break;
 
 for (int i = 0; i < n; ++i) {
 if (!alive[i]) continue;
-if (roles[i] == ROLE_DOCTOR) doctorSave = chooseDoctorSave(i);
+if (roles[i] == ROLE_DOCTOR)    doctorSave = chooseDoctorSave(i);
 if (roles[i] == ROLE_DETECTIVE) detectiveCheck = chooseDetectiveCheck(i);
 }
 
@@ -351,48 +443,56 @@ std::cout << "No consensus. No one is lynched.\n";
 return;
 }
 
+std::cout << names[lynchTarget] << " is lynched by vote. ("
+<< roleToString((Role)roles[lynchTarget]) << ")\n";
 bool wasMafia = (roles[lynchTarget] == ROLE_MAFIA);
 alive[lynchTarget] = 0;
 
-std::cout << names[lynchTarget] << " was lynched by the town. ("
-<< roleToString((Role)roles[lynchTarget]) << ")\n";
-
-for (int i = 0; i < n; ++i)
-if (alive[i] && votes[i] == lynchTarget)
+for (int i = 0; i < n; ++i) {
+if (!alive[i]) continue;
+if (votes[i] == lynchTarget) {
 updateTrustAfterLynch(i, lynchTarget, wasMafia);
+}
+}
 };
 
-std::cout << "\nInitial roles (omniscient log):\n";
-for (int i = 0; i < n; ++i)
-std::cout << names[i] << " -> " << roleToString((Role)roles[i])
-<< " [agg=" << aggression[i]
-<< ", loy=" << loyalty[i]
-<< ", par=" << paranoia[i]
-<< ", dec=" << deceit[i] << "]\n";
-
-Phase phase = PHASE_NIGHT;
 int cycle = 1;
+const int maxCycles = 100;
 
-while (true) {
-if (phase == PHASE_NIGHT) {
+while (!mafiaWin() && !townWin() && cycle <= maxCycles) {
 nightPhase(cycle);
 if (mafiaWin() || townWin()) break;
-phase = PHASE_DAY;
-} else {
 dayPhase(cycle);
-if (mafiaWin() || townWin()) break;
-phase = PHASE_NIGHT;
 cycle++;
 }
+
+std::cout << "\n=== GAME OVER ===\n";
+bool mafiaWon = mafiaWin();
+bool townWon = townWin();
+
+if (mafiaWon)
+std::cout << "Mafia win!\n";
+else if (townWon)
+std::cout << "Town win!\n";
+else
+std::cout << "Game ended by cycle limit.\n";
+
+for (int i = 0; i < n; ++i) {
+float reward = 0.0f;
+if (mafiaWon && roles[i] == ROLE_MAFIA)
+reward = 1.0f;
+else if (townWon && roles[i] != ROLE_MAFIA)
+reward = 1.0f;
+else
+reward = -1.0f;
+
+if (lastAction[i] != -1 && lastState[i] != -1) {
+std::vector<int> nextActions = {0, 1};
+brains[i].update(lastState[i], lastAction[i], reward,
+lastState[i], nextActions);
+}
 }
 
-if (mafiaWin()) std::cout << "\n*** MAFIA WIN \n";
-else std::cout << "\n TOWN WIN ***\n";
-
-std::cout << "\nFinal states:\n";
-for (int i = 0; i < n; ++i)
-std::cout << names[i] << " -> " << roleToString((Role)roles[i])
-<< (alive[i] ? " (alive)" : " (dead)") << "\n";
-
+std::cout << "RL update complete.\n";
 return 0;
 }
