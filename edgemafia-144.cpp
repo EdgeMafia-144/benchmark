@@ -138,9 +138,15 @@ std::vector<float> deceit(n);
 std::vector<float> trust(n * n, 0.0f);
 std::vector<float> liking(n * n, 0.0f);
 
+// RL brains and last decisions per agent
 std::vector<QLearning> brains(n);
 std::vector<int> lastState(n, -1);
 std::vector<int> lastAction(n, -1);
+
+// Memory: betrayal and consistency
+std::vector<int> betrayalMatrix(n * n, 0);      // who betrayed whom
+std::vector<int> voteConsistency(n * n, 0);     // repeated targeting / consistency
+std::vector<int> lastVoteTarget(n, -1);         // last vote per agent
 
 auto idx = [n](int i, int j) { return i * n + j; };
 
@@ -440,6 +446,17 @@ lynchTarget = i;
 
 if (lynchTarget == -1 || maxVotes == 0) {
 std::cout << "No consensus. No one is lynched.\n";
+// still update consistency memory (no lynch, but votes exist)
+for (int i = 0; i < n; ++i) {
+if (!alive[i]) continue;
+int v = votes[i];
+if (v != -1) {
+if (lastVoteTarget[i] == v) {
+voteConsistency[idx(i, v)]++;
+}
+lastVoteTarget[i] = v;
+}
+}
 return;
 }
 
@@ -450,7 +467,21 @@ alive[lynchTarget] = 0;
 
 for (int i = 0; i < n; ++i) {
 if (!alive[i]) continue;
-if (votes[i] == lynchTarget) {
+int v = votes[i];
+if (v == -1) continue;
+
+// betrayal memory: voting against someone you currently treat as ally
+if (v == lynchTarget && isAlly(i, lynchTarget)) {
+betrayalMatrix[idx(i, lynchTarget)]++;
+}
+
+// consistency memory: repeated targeting
+if (lastVoteTarget[i] == v) {
+voteConsistency[idx(i, v)]++;
+}
+lastVoteTarget[i] = v;
+
+if (v == lynchTarget) {
 updateTrustAfterLynch(i, lynchTarget, wasMafia);
 }
 }
