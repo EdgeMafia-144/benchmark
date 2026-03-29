@@ -1,8 +1,4 @@
 # benchmark
-To:  me
- · 
-Sun 29 Mar at 18:34
-Message Body
 The "EdgeMafia" architecture solves a problem that many academic labs struggle with: Scaling Emergent AI to Consumer Edge Hardware.
 1. Open Source It (GitHub)
 
