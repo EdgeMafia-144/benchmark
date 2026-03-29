@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <functional>
 #include <cstdlib>
+#include <limits>
 
 enum Role {
 ROLE_MAFIA = 0,
@@ -19,6 +20,7 @@ ROLE_DETECTIVE = 3
 static std::mt19937 rng((unsigned)std::time(nullptr));
 
 int randInt(int maxVal) {
+if (maxVal <= 0) return 0;
 std::uniform_int_distribution<int> dist(0, maxVal - 1);
 return dist(rng);
 }
@@ -26,6 +28,12 @@ return dist(rng);
 float randFloat() {
 std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 return dist(rng);
+}
+
+float clampf(float x, float lo, float hi) {
+if (x < lo) return lo;
+if (x > hi) return hi;
+return x;
 }
 
 std::string roleToString(Role r) {
@@ -41,14 +49,24 @@ default: return "Unknown";
 int weightedChoice(const std::vector<int> &candidates,
 const std::vector<float> &scores) {
 if (candidates.empty()) return -1;
-float sum = 0.0f;
-for (float s : scores) sum += s;
-if (sum <= 0.0f) {
+
+if (scores.size() != candidates.size()) {
 return candidates[randInt((int)candidates.size())];
 }
+
+float sum = 0.0f;
+for (float s : scores) {
+if (s > 0.0f) sum += s;
+}
+
+if (sum <= 0.0f || !std::isfinite(sum)) {
+return candidates[randInt((int)candidates.size())];
+}
+
 float r = randFloat() * sum;
 for (size_t i = 0; i < candidates.size(); ++i) {
-r -= scores[i];
+float w = scores[i] > 0.0f ? scores[i] : 0.0f;
+r -= w;
 if (r <= 0.0f) return candidates[i];
 }
 return candidates.back();
@@ -66,7 +84,7 @@ float relu(float x) { return std::max(0.0f, x); }
 float reluDeriv(float x) { return x > 0 ? 1.0f : 0.0f; }
 
 public:
-SimpleNN() : inputSize(10), hiddenSize(32), outputSize(5) {}
+SimpleNN() : inputSize(10), hiddenSize(32), outputSize(8) {}
 
 SimpleNN(int in, int hidden, int out)
 : inputSize(in), hiddenSize(hidden), outputSize(out) {
@@ -131,12 +149,17 @@ output[o] = sum;
 
 float error = target - output[action];
 
+if (!std::isfinite(error)) {
+return;
+}
+
 for (int h = 0; h < hiddenSize; ++h)
 weights2[action][h] += lr * error * hidden[h];
 bias2[action] += lr * error;
 
 for (int h = 0; h < hiddenSize; ++h) {
 float grad = error * weights2[action][h] * reluDeriv(preHidden[h]);
+if (!std::isfinite(grad)) continue;
 for (int i = 0; i < (int)input.size() && i < inputSize; ++i)
 weights1[h][i] += lr * grad * input[i];
 bias1[h] += lr * grad;
@@ -145,16 +168,30 @@ bias1[h] += lr * grad;
 
 int chooseAction(const std::vector<float> &input, const std::vector<int> &actions, float epsilon = 0.1f) {
 if (actions.empty()) return -1;
+
+std::vector<int> validActions;
+validActions.reserve(actions.size());
+for (int a : actions) {
+if (a >= 0 && a < outputSize) {
+validActions.push_back(a);
+}
+}
+if (validActions.empty()) return -1;
+
 if (randFloat() < epsilon) {
-return actions[randInt((int)actions.size())];
+return validActions[randInt((int)validActions.size())];
 }
 
 std::vector<float> qValues = forward(input);
-float best = -1e9f;
-int bestAction = actions[0];
+if (qValues.empty()) {
+return validActions[randInt((int)validActions.size())];
+}
 
-for (int a : actions) {
-if (a >= 0 && a < (int)qValues.size() && qValues[a] > best) {
+float best = -1e9f;
+int bestAction = validActions[0];
+
+for (int a : validActions) {
+if (a >= 0 && a < (int)qValues.size() && qValues[a] > best && std::isfinite(qValues[a])) {
 best = qValues[a];
 bestAction = a;
 }
@@ -166,12 +203,6 @@ return bestAction;
 int getTrustBucket(float trust) {
 if (trust < -0.3f) return 0;
 if (trust < 0.3f) return 1;
-return 2;
-}
-
-int getSuspicionBucket(float s) {
-if (s < 1.0f) return 0;
-if (s < 3.0f) return 1;
 return 2;
 }
 
@@ -205,22 +236,32 @@ std::vector<float> loyalty(n);
 std::vector<float> paranoia(n);
 std::vector<float> deceit(n);
 
-// Sparse social graph: per-agent relationships
 std::vector<std::unordered_map<int, Relationship>> relations(n);
+
+const int STATE_SIZE = 10;
+const int HIDDEN_SIZE = 32;
+const int ACTION_SIZE = 8;
 
 std::vector<SimpleNN> brains;
 brains.reserve(n);
 for (int i = 0; i < n; ++i) {
-brains.emplace_back(10, 32, 5);
+brains.emplace_back(STATE_SIZE, HIDDEN_SIZE, ACTION_SIZE);
 }
 std::vector<std::vector<float>> lastState(n);
 std::vector<int> lastAction(n, -1);
 
 std::vector<int> lastVoteTarget(n, -1);
-
 std::vector<int> attackedCount(n, 0);
 
-std::vector<float> globalSuspicion(n, 0.0f);
+// Per-agent belief: prob_mafia[i][j] = agent i's belief that j is mafia
+std::vector<std::vector<float>> probMafia(n, std::vector<float>(n, 0.0f));
+
+// Simple communication: signalType[i] = -1 none, 0 defend, 1 accuse; signalTarget[i] = player index
+std::vector<int> signalType(n, -1);
+std::vector<int> signalTarget(n, -1);
+
+// Intermediate rewards
+std::vector<float> totalReward(n, 0.0f);
 
 for (int i = 0; i < n; ++i) names[i] = "P" + std::to_string(i);
 
@@ -237,6 +278,14 @@ while ((int)rolePool.size() < n) rolePool.push_back(ROLE_VILLAGER);
 
 std::shuffle(rolePool.begin(), rolePool.end(), rng);
 for (int i = 0; i < n; ++i) roles[i] = rolePool[i];
+
+float baseProb = (float)mafiaCount / std::max(1, n - 1);
+for (int i = 0; i < n; ++i) {
+for (int j = 0; j < n; ++j) {
+if (i == j) probMafia[i][j] = 0.0f;
+else probMafia[i][j] = baseProb;
+}
+}
 
 for (int i = 0; i < n; ++i) {
 float r1 = randFloat();
@@ -338,7 +387,6 @@ if (it == m.end()) return false;
 return it->second.knownTown;
 };
 
-// Initialize sparse random relationships
 for (int i = 0; i < n; ++i) {
 int connections = std::min(INIT_CONNECTIONS, n - 1);
 for (int c = 0; c < connections; ++c) {
@@ -351,7 +399,6 @@ rel.liking = base;
 }
 }
 
-// Mafia mutual boost
 for (int i = 0; i < n; ++i) {
 if (roles[i] != ROLE_MAFIA) continue;
 for (int j = 0; j < n; ++j) {
@@ -421,7 +468,7 @@ float susp = -(t + l) * (0.5f + A);
 float betray = (roles[j] == ROLE_MAFIA && t < -0.4f) ? (0.5f * D) : 0.0f;
 
 float s = susp + betray;
-if (s > 0.0f) {
+if (s > 0.0f && std::isfinite(s)) {
 cand.push_back(j);
 score.push_back(std::max(0.01f, s));
 }
@@ -454,6 +501,7 @@ base += 1.0f;
 }
 
 float s = base + ally + likeTerm + attackedTerm;
+if (!std::isfinite(s)) s = 0.1f;
 cand.push_back(j);
 score.push_back(std::max(0.01f, s));
 }
@@ -474,6 +522,7 @@ if (knowsMafia(self, j) || knowsTown(self, j)) continue;
 float t = getTrust(self, j);
 float s = -t * (0.5f + P);
 if (s <= 0.0f) s = 0.05f;
+if (!std::isfinite(s)) s = 0.05f;
 cand.push_back(j);
 score.push_back(std::max(0.01f, s));
 }
@@ -484,6 +533,7 @@ if (!alive[j] || j == self) continue;
 float t = getTrust(self, j);
 float s = -t * (0.5f + P);
 if (s <= 0.0f) s = 0.05f;
+if (!std::isfinite(s)) s = 0.05f;
 cand.push_back(j);
 score.push_back(std::max(0.01f, s));
 }
@@ -494,38 +544,11 @@ return weightedChoice(cand, score);
 
 auto chooseLynchTarget = [&](int self) {
 std::vector<int> cand;
-std::vector<float> score;
 cand.reserve(n);
-score.reserve(n);
-
-float P = paranoia[self];
-float L = loyalty[self];
-float D = deceit[self];
 
 for (int j = 0; j < n; ++j) {
 if (!alive[j] || j == self) continue;
-
-float t = getTrust(self, j);
-float base = -t * (0.7f + P);
-float ally = isAlly(self, j) ? 1.0f : 0.0f;
-float allyFactor = (1.0f - 0.7f * L * ally);
-float betrayal = (ally && t < 0.0f) ? (0.3f * D) : 0.0f;
-
-float s = base * allyFactor + betrayal;
-
-s += globalSuspicion[j];
-
-if (roles[self] == ROLE_DETECTIVE && knowsMafia(self, j)) {
-s += 8.0f;
-}
-if (roles[self] == ROLE_DETECTIVE && knowsTown(self, j)) {
-s -= 4.0f;
-}
-
-if (s <= 0.0f) s = 0.05f;
-
 cand.push_back(j);
-score.push_back(std::max(0.01f, s));
 }
 
 if (cand.empty()) {
@@ -534,51 +557,70 @@ lastAction[self] = -1;
 return -1;
 }
 
-std::vector<int> order(cand.size());
-for (size_t i = 0; i < cand.size(); ++i) order[i] = (int)i;
-std::sort(order.begin(), order.end(), [&](int a, int b) {
-return score[a] > score[b];
-});
+float P = paranoia[self];
+float L = loyalty[self];
+float D = deceit[self];
 
-const int K = 3;
-std::vector<int> topCandidates;
-for (int k = 0; k < (int)order.size() && k < K; ++k) {
-topCandidates.push_back(cand[order[k]]);
+int primaryTarget = cand[0];
+float bestHeuristic = -1e9f;
+
+for (int j : cand) {
+float t = getTrust(self, j);
+float base = -t * (0.7f + P);
+float ally = isAlly(self, j) ? 1.0f : 0.0f;
+float allyFactor = (1.0f - 0.7f * L * ally);
+float betrayal = (ally && t < 0.0f) ? (0.3f * D) : 0.0f;
+float s = base * allyFactor + betrayal;
+
+float belief = clampf(probMafia[self][j], 0.0f, 1.0f);
+s += 2.0f * belief;
+
+if (!std::isfinite(s)) s = 0.05f;
+if (s > bestHeuristic) {
+bestHeuristic = s;
+primaryTarget = j;
 }
-
-if (topCandidates.empty()) {
-lastState[self].clear();
-lastAction[self] = -1;
-return -1;
 }
-
-int primaryTarget = topCandidates[0];
 
 float tPrimary = getTrust(self, primaryTarget);
 int betrayalFlag = (getBetrayal(self, primaryTarget) > 0) ? 1 : 0;
 int consistencyFlag = (getConsistency(self, primaryTarget) > 0) ? 1 : 0;
-float suspVal = globalSuspicion[primaryTarget];
-int suspBucket = getSuspicionBucket(suspVal);
+float beliefPrimary = clampf(probMafia[self][primaryTarget], 0.0f, 1.0f);
 int detectiveFlag = (roles[self] == ROLE_DETECTIVE && knowsMafia(self, primaryTarget)) ? 1 : 0;
 
-std::vector<float> state(10, 0.0f);
+float avgBelief = 0.0f;
+int cntBelief = 0;
+for (int j : cand) {
+avgBelief += clampf(probMafia[self][j], 0.0f, 1.0f);
+cntBelief++;
+}
+if (cntBelief > 0) avgBelief /= (float)cntBelief;
+
+std::vector<float> state(STATE_SIZE, 0.0f);
 state[0] = (tPrimary + 1.0f) / 2.0f;
 state[1] = (float)betrayalFlag;
 state[2] = (float)consistencyFlag;
-state[3] = (float)suspBucket / 2.0f;
+state[3] = beliefPrimary;
 state[4] = (float)detectiveFlag;
 state[5] = (P + 1.0f) / 2.0f;
 state[6] = (L + 1.0f) / 2.0f;
 state[7] = (D + 1.0f) / 2.0f;
-state[8] = (globalSuspicion[primaryTarget] + 5.0f) / 10.0f;
+state[8] = avgBelief;
 state[9] = (roles[self] == ROLE_MAFIA) ? 1.0f : 0.0f;
 
 lastState[self] = state;
 
+const int MAX_TARGETS = ACTION_SIZE - 1;
+std::vector<int> idxMap;
+idxMap.reserve(MAX_TARGETS);
+for (int k = 0; k < (int)cand.size() && (int)idxMap.size() < MAX_TARGETS; ++k) {
+idxMap.push_back(cand[k]);
+}
+
 std::vector<int> actions;
 actions.push_back(0);
-for (int k = 0; k < (int)topCandidates.size(); ++k) {
-actions.push_back(k + 1);
+for (int a = 1; a <= (int)idxMap.size(); ++a) {
+actions.push_back(a);
 }
 
 float epsilon = 0.1f;
@@ -590,11 +632,11 @@ return -1;
 }
 
 int chosenIndex = action - 1;
-if (chosenIndex < 0 || chosenIndex >= (int)topCandidates.size()) {
+if (chosenIndex < 0 || chosenIndex >= (int)idxMap.size()) {
 return -1;
 }
 
-int target = topCandidates[chosenIndex];
+int target = idxMap[chosenIndex];
 return target;
 };
 
@@ -659,12 +701,12 @@ rel.knownMafia = true;
 paranoia[detectiveId] = std::min(1.0f, paranoia[detectiveId] + 0.1f);
 rel.trust -= 0.7f;
 if (rel.trust < -1.0f) rel.trust = -1.0f;
-globalSuspicion[detectiveCheck] += 10.0f;
+probMafia[detectiveId][detectiveCheck] = 0.95f;
 } else {
 rel.knownTown = true;
 rel.trust += 0.4f;
 if (rel.trust > 1.0f) rel.trust = 1.0f;
-globalSuspicion[detectiveCheck] -= 2.0f;
+probMafia[detectiveId][detectiveCheck] = 0.01f;
 }
 }
 
@@ -686,6 +728,11 @@ for (int i = 0; i < n; ++i)
 if (alive[i]) {
 int t = chooseLynchTarget(i);
 votes[i] = t;
+}
+
+for (int i = 0; i < n; ++i) {
+signalType[i] = -1;
+signalTarget[i] = -1;
 }
 
 for (int i = 0; i < n; ++i) {
@@ -712,6 +759,19 @@ bestAlly = j;
 if (bestAlly != -1) {
 votes[i] = votes[bestAlly];
 }
+}
+
+if (votes[i] != -1) {
+signalType[i] = 1;
+signalTarget[i] = votes[i];
+}
+}
+
+std::cout << "Signals (accusations):\n";
+for (int i = 0; i < n; ++i) {
+if (!alive[i]) continue;
+if (signalType[i] == 1 && signalTarget[i] != -1) {
+std::cout << " - " << names[i] << " accuses " << names[signalTarget[i]] << "\n";
 }
 }
 
@@ -741,7 +801,6 @@ if (lastVoteTarget[i] == v) {
 rel.consistency++;
 }
 lastVoteTarget[i] = v;
-globalSuspicion[v] += 0.2f;
 }
 }
 return;
@@ -751,6 +810,10 @@ std::cout << names[lynchTarget] << " is lynched by vote. ("
 << roleToString((Role)roles[lynchTarget]) << ")\n";
 bool wasMafia = (roles[lynchTarget] == ROLE_MAFIA);
 alive[lynchTarget] = 0;
+
+for (int i = 0; i < n; ++i) {
+probMafia[i][lynchTarget] = 0.0f;
+}
 
 for (int i = 0; i < n; ++i) {
 if (!alive[i]) continue;
@@ -771,12 +834,13 @@ rel.consistency++;
 lastVoteTarget[i] = v;
 
 if (v == lynchTarget) {
-updateTrustAfterLynch(i, lynchTarget, wasMafia);
 if (wasMafia) {
-globalSuspicion[lynchTarget] += 5.0f;
+totalReward[i] += 0.1f;
+totalReward[i] += 0.3f;
 } else {
-globalSuspicion[lynchTarget] -= 3.0f;
+totalReward[i] -= 0.1f;
 }
+updateTrustAfterLynch(i, lynchTarget, wasMafia);
 }
 }
 };
@@ -788,6 +852,13 @@ while (!mafiaWin() && !townWin() && cycle <= maxCycles) {
 nightPhase(cycle);
 if (mafiaWin() || townWin()) break;
 dayPhase(cycle);
+
+for (int i = 0; i < n; ++i) {
+if (alive[i]) {
+totalReward[i] += 0.2f;
+}
+}
+
 cycle++;
 }
 
@@ -803,22 +874,28 @@ else
 std::cout << "Game ended by cycle limit.\n";
 
 for (int i = 0; i < n; ++i) {
-float reward = 0.0f;
+float reward = totalReward[i];
 if (mafiaWon && roles[i] == ROLE_MAFIA)
-reward = 1.0f;
+reward += 1.0f;
 else if (townWon && roles[i] != ROLE_MAFIA)
-reward = 1.0f;
+reward += 1.0f;
 else
-reward = -1.0f;
+reward -= 1.0f;
 
 if (!lastState[i].empty() && lastAction[i] != -1) {
-std::vector<float> nextState = lastState[i];
-std::vector<float> qValues = brains[i].forward(nextState);
+std::vector<float> qValues = brains[i].forward(lastState[i]);
+if (qValues.empty()) continue;
+
 float maxNextQ = -1e9f;
 for (float q : qValues) {
-if (q > maxNextQ) maxNextQ = q;
+if (std::isfinite(q) && q > maxNextQ) maxNextQ = q;
 }
+if (!std::isfinite(maxNextQ)) maxNextQ = 0.0f;
+
+maxNextQ = clampf(maxNextQ, -10.0f, 10.0f);
 float target = reward + 0.9f * maxNextQ;
+target = clampf(target, -10.0f, 10.0f);
+
 brains[i].train(lastState[i], lastAction[i], target, 0.01f);
 }
 }
