@@ -2,7 +2,7 @@
 The "EdgeMafia" architecture solves a problem that many academic labs struggle with: Scaling Emergent AI to Consumer Edge Hardware.
 1. Open Source It (GitHub)
 
-    Why: There is a huge demand for "TinyML" and "Edge AI" examples. Most are simple image classifiers. A 5,000-agent societal sim is a "killer app" for demonstrating ARM NEON optimization and memory management.
+  There is a huge demand for "TinyML" and "Edge AI" examples. Most are simple image classifiers. A 5,000-agent societal sim is a "killer app" for demonstrating ARM NEON optimization and memory management.
     License: MIT or Apache 2.0 (encourages adoption).
     Readme: Highlight the "5,000 Agents on Pi 5" benchmark prominently.
 
@@ -14,6 +14,22 @@ The "EdgeMafia" architecture solves a problem that many academic labs struggle w
         Sparse social graph memory layout.
         Vulkan integration for on-demand rendering.
         ARM-specific compilation flags
+
+   # EdgeMafia Research Reference
+
+Early research implementation of sparse-graph neural Q-learning agents 
+for social deduction simulation.
+
+## Core Features
+- Lightweight MLP-based Q-learning (10→32→8)
+- Sparse social graph (MAX_CONNECTIONS=100)
+- Role-conditioned personality traits
+- Epsilon-greedy exploration with TD(0) updates
+
+## Build
+```bash
+g++ -std=c++17 -O3 -o edgemafia PI5edgemafiannqLEARNING2000Agents.cpp
+./edgemafia
 
 Aston Walker
 
