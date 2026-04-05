@@ -1,0 +1,245 @@
+# ============================
+# 1. IMPORTS + FILE UPLOAD
+# ============================
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import networkx as nx
+from google.colab import files
+
+plt.style.use("dark_background")
+
+print("Upload mafia_agents_save.txt")
+uploaded = files.upload()
+file_name = list(uploaded.keys())[0]
+
+
+# ============================
+# 2. ROBUST PARSER
+# ============================
+def parse_mafia_save(path):
+    with open(path, "r") as f:
+        tokens = f.read().split()
+
+    if not tokens[0].startswith("MAFIA_SIM_SAVE"):
+        raise ValueError("Invalid header")
+
+    agent_count = int(tokens[1])
+    agent_positions = [i for i, t in enumerate(tokens) if t == "AGENT"]
+
+    agents = []
+
+    for idx, start in enumerate(agent_positions):
+        end = agent_positions[idx + 1] if idx + 1 < len(agent_positions) else len(tokens)
+        block = tokens[start:end]
+
+        if len(block) < 13:
+            continue
+
+        a = {
+            "id": int(block[1]),
+            "name": block[2],
+            "alive": int(block[3]),
+            "role": int(block[4]),
+            "aggression": float(block[5]),
+            "loyalty": float(block[6]),
+            "paranoia": float(block[7]),
+            "deceit": float(block[8]),
+            "reward": float(block[9]),
+            "action": int(block[10]),
+            "target": int(block[11]),
+            "attacked": int(block[12]),
+        }
+
+        rel_count = None
+        for i in range(len(block) - 1, 12, -1):
+            try:
+                cand = int(block[i])
+                remaining = len(block) - (i + 1)
+                if remaining % 7 == 0:
+                    rel_count = cand
+                    rel_start = i + 1
+                    break
+            except:
+                continue
+
+        relations = []
+        if rel_count is not None:
+            for r in range(rel_count):
+                base = rel_start + r * 7
+                relations.append({
+                    "other": int(block[base]),
+                    "trust": float(block[base+1]),
+                    "liking": float(block[base+2]),
+                    "betrayal": int(block[base+3]),
+                    "consistency": int(block[base+4]),
+                    "knownMafia": int(block[base+5]),
+                    "knownTown": int(block[base+6]),
+                })
+
+        a["relations"] = relations
+        agents.append(a)
+
+    return agents
+
+
+# ============================
+# 3. PARSE + DATAFRAME
+# ============================
+data = parse_mafia_save(file_name)
+df = pd.DataFrame(data)
+
+role_map = {0: "Mafia", 1: "Villager", 2: "Doctor", 3: "Detective"}
+df["role_label"] = df["role"].map(role_map)
+
+
+# ============================
+# 4. TRUST MATRIX HEATMAP
+# ============================
+N = len(data)
+trust_matrix = np.zeros((N, N))
+
+for agent in data:
+    for r in agent["relations"]:
+        trust_matrix[agent["id"], r["other"]] = r["trust"]
+
+plt.figure(figsize=(14, 12))
+sns.heatmap(trust_matrix, cmap="viridis")
+plt.title("Trust Heatmap (N×N)")
+plt.xlabel("Target Agent")
+plt.ylabel("Source Agent")
+plt.show()
+
+
+# ============================
+# 5. SURVIVAL BAR CHART
+# ============================
+plt.figure(figsize=(10, 6))
+survival = df.groupby(["role_label", "alive"]).size().unstack().fillna(0)
+survival.plot(kind="bar", stacked=True, color=["red", "green"])
+plt.title("Survival by Role")
+plt.show()
+
+
+# ============================
+# 6. CLIQUE GRAPH (TRUST > 0.7)
+# ============================
+G = nx.Graph()
+
+for agent in data:
+    G.add_node(agent["id"], role=df.loc[agent["id"], "role_label"])
+    for r in agent["relations"]:
+        if r["trust"] > 0.7:
+            G.add_edge(agent["id"], r["other"], weight=r["trust"])
+
+plt.figure(figsize=(12, 10))
+pos = nx.spring_layout(G, k=0.15)
+colors = ["red" if G.nodes[n]["role"] == "Mafia" else "skyblue" for n in G.nodes]
+
+nx.draw_networkx_nodes(G, pos, node_size=40, node_color=colors)
+nx.draw_networkx_edges(G, pos, alpha=0.2, edge_color="white")
+plt.title("High-Trust Cliques (trust > 0.7)")
+plt.show()
+
+
+# ============================
+# 7. REWARD DISTRIBUTION (FIXED)
+# ============================
+plt.figure(figsize=(10, 6))
+sns.violinplot(
+    data=df,
+    x="role_label",
+    y="reward",
+    hue="role_label",
+    palette="Set2",
+    legend=False
+)
+plt.title("Reward Distribution by Role")
+plt.show()
+
+
+# ============================
+# 8. BETRAYAL HEATMAP
+# ============================
+betray_matrix = np.zeros((N, N))
+
+for agent in data:
+    for r in agent["relations"]:
+        betray_matrix[agent["id"], r["other"]] = r["betrayal"]
+
+plt.figure(figsize=(14, 12))
+sns.heatmap(betray_matrix, cmap="magma")
+plt.title("Betrayal Heatmap (N×N)")
+plt.xlabel("Target Agent")
+plt.ylabel("Source Agent")
+plt.show()
+
+
+# ============================
+# 9. CLIQUE SIZE HISTOGRAM
+# ============================
+clique_sizes = [len(c) for c in nx.connected_components(G)]
+
+plt.figure(figsize=(10, 6))
+plt.hist(clique_sizes, bins=20, color="cyan", edgecolor="white")
+plt.title("Clique Size Distribution (trust > 0.7)")
+plt.xlabel("Clique Size")
+plt.ylabel("Count")
+plt.show()
+
+
+# ============================
+# 10. RL REWARD DISTRIBUTION (CONVERGENCE PROXY)
+# ============================
+plt.figure(figsize=(10, 6))
+sns.histplot(df["reward"], bins=50, kde=True, color="orange")
+plt.title("RL Reward Distribution (Proxy for Convergence)")
+plt.xlabel("Reward")
+plt.ylabel("Frequency")
+plt.show()
+
+
+# ============================
+# 11. PER-AGENT TRAIT HISTOGRAMS
+# ============================
+traits = ["aggression", "loyalty", "paranoia", "deceit"]
+
+plt.figure(figsize=(14, 10))
+for i, t in enumerate(traits):
+    plt.subplot(2, 2, i+1)
+    sns.histplot(df[t], kde=True, bins=40, color="skyblue")
+    plt.title(f"Distribution of {t.capitalize()}")
+
+plt.tight_layout()
+plt.show()
+
+
+# ============================
+# 12. NETWORK CENTRALITY ANALYSIS
+# ============================
+degree_centrality = nx.degree_centrality(G)
+betweenness = nx.betweenness_centrality(G)
+closeness = nx.closeness_centrality(G)
+
+centrality_df = pd.DataFrame({
+    "id": list(degree_centrality.keys()),
+    "degree": list(degree_centrality.values()),
+    "betweenness": list(betweenness.values()),
+    "closeness": list(closeness.values()),
+})
+
+print("\nTOP 10 MOST CENTRAL AGENTS (Degree Centrality)")
+print(centrality_df.nlargest(10, "degree"))
+
+plt.figure(figsize=(10, 6))
+sns.histplot(centrality_df["degree"], bins=40, kde=True, color="lime")
+plt.title("Degree Centrality Distribution")
+plt.show()
+
+
+# ============================
+# 13. TOP 5 LEADERS BY REWARD
+# ============================
+print("\nTOP 5 AGENTS BY REWARD")
+print(df.nlargest(5, "reward")[["name", "role_label", "reward", "alive"]])
