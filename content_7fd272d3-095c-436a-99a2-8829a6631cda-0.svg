@@ -1,0 +1,405 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 800 600">
+  <title>Edge Mafia Net - Salvo Targeting Game</title>
+  <defs>
+    <style>
+      .mono { font-family: 'Courier New', monospace; }
+      
+      /* Cinematic Camera */
+      @keyframes trackRightZoom {
+        0% { transform: translate(0px, 0px) scale(1); }
+        100% { transform: translate(-100px, -20px) scale(1.15); }
+      }
+      .camera-rig { animation: trackRightZoom 12s infinite alternate ease-in-out; transform-origin: 400px 300px; }
+
+      /* Walk Cycles */
+      @keyframes march1 { 0%, 15% { transform: translateX(0); } 25%, 45% { transform: translateX(40px); } 55%, 75% { transform: translateX(40px); } 85%, 100% { transform: translateX(90px); } }
+      @keyframes march2 { 0%, 25% { transform: translateX(0); } 35%, 55% { transform: translateX(50px); } 65%, 85% { transform: translateX(50px); } 95%, 100% { transform: translateX(110px); } }
+      @keyframes march3 { 0%, 10% { transform: translateX(0); } 20%, 40% { transform: translateX(30px); } 50%, 70% { transform: translateX(30px); } 80%, 100% { transform: translateX(80px); } }
+      .m1 { animation: march1 6s infinite ease-in-out; }
+      .m2 { animation: march2 7s infinite ease-in-out; }
+      .m3 { animation: march3 5.5s infinite ease-in-out; }
+
+      /* Floating Grins */
+      @keyframes float1 { 0% { transform: translate(0,0) scale(1); } 25% { transform: translate(40px,-60px) scale(1.2); } 50% { transform: translate(-30px,-90px) scale(0.9); } 75% { transform: translate(-60px,-30px) scale(1.1); } 100% { transform: translate(0,0) scale(1); } }
+      .float1 { animation: float1 9s infinite ease-in-out; }
+
+      /* Rig Kinematics */
+      @keyframes bodyBob { 0%, 100% { transform: translateY(0px); } 25%, 75% { transform: translateY(-6px); } 50% { transform: translateY(0px); } }
+      @keyframes legFrontSwing { 0% { transform: rotate(-40deg); } 50% { transform: rotate(40deg); } 100% { transform: rotate(-40deg); } }
+      @keyframes legBackSwing { 0% { transform: rotate(40deg); } 50% { transform: rotate(-40deg); } 100% { transform: rotate(40deg); } }
+      @keyframes calfFrontBend { 0% { transform: translateY(36px) rotate(0deg); } 25% { transform: translateY(36px) rotate(0deg); } 50% { transform: translateY(36px) rotate(80deg); } 75% { transform: translateY(36px) rotate(20deg); } 100% { transform: translateY(36px) rotate(0deg); } }
+      @keyframes calfBackBend { 0% { transform: translateY(36px) rotate(0deg); } 25% { transform: translateY(36px) rotate(80deg); } 50% { transform: translateY(36px) rotate(20deg); } 75% { transform: translateY(36px) rotate(0deg); } 100% { transform: translateY(36px) rotate(0deg); } }
+      @keyframes armFrontSwing { 0% { transform: translateY(-48px) rotate(40deg); } 50% { transform: translateY(-48px) rotate(-40deg); } 100% { transform: translateY(-48px) rotate(40deg); } }
+      @keyframes armBackSwing { 0% { transform: translateY(-48px) rotate(-40deg); } 50% { transform: translateY(-48px) rotate(40deg); } 100% { transform: translateY(-48px) rotate(-40deg); } }
+      
+      .body-rig { animation: bodyBob 0.8s infinite ease-in-out; transform-origin: 0 0; }
+      .leg-front { animation: legFrontSwing 0.8s infinite linear; transform-origin: 0 0; }
+      .calf-front { animation: calfFrontBend 0.8s infinite linear; transform-origin: 0 0; }
+      .leg-back { animation: legBackSwing 0.8s infinite linear; transform-origin: 0 0; }
+      .calf-back { animation: calfBackBend 0.8s infinite linear; transform-origin: 0 0; }
+      .arm-front { animation: armFrontSwing 0.8s infinite ease-in-out; transform-origin: 0 0; }
+      .arm-back { animation: armBackSwing 0.8s infinite ease-in-out; transform-origin: 0 0; }
+
+      /* Bolt Stream Animations */
+      @keyframes dashStream { 0% { stroke-dashoffset: 500; } 100% { stroke-dashoffset: -500; } }
+      .bolt-red { stroke: #cc0000; stroke-dasharray: 20 20; animation: dashStream 2s infinite linear; opacity: 0.9; }
+      .bolt-green { stroke: #00ff00; stroke-dasharray: 5 15; animation: dashStream 1.5s infinite linear; opacity: 0.9; }
+      .bolt-blue { stroke: #0088ff; stroke-width: 3; stroke-dasharray: 30 10; animation: dashStream 1s infinite linear; opacity: 0.9; }
+      
+      .target-entity { cursor: pointer; }
+    </style>
+
+    <clipPath id="game-clip">
+      <rect x="0" y="0" width="600" height="600"/>
+    </clipPath>
+
+    <linearGradient id="ground-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e0e0e0"/>
+      <stop offset="100%" stop-color="#c0c0c0"/>
+    </linearGradient>
+
+    <!-- Filters -->
+    <filter id="plasma-green" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" seed="1"><animate attributeName="seed" from="1" to="100" dur="0.8s" repeatCount="indefinite"/></feTurbulence>
+      <feColorMatrix type="matrix" values="0 0 0 0 0  0 3 0 0 0.8  0 0 0 0 0  0 0 0 0.7 0"/>
+    </filter>
+    <filter id="flame-flicker" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="2" result="turbulence"><animate attributeName="seed" from="1" to="10" dur="0.3s" repeatCount="indefinite"/></feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="fire-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="bolt-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="explode-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Walker Rig (Origin at Hip 0,0. Feet at 80. Head at -75) -->
+    <g id="walker-beam">
+      <g class="arm-back"><rect x="-7" y="0" width="14" height="38" fill="#000000" /><circle cx="0" cy="40" r="8" fill="#000000" /></g>
+      <g class="leg-back"><rect x="-9" y="0" width="18" height="36" fill="#000000" /><g class="calf-back"><rect x="-8" y="0" width="16" height="38" fill="#000000" /><polygon points="-10,36 16,36 16,44 -10,44" fill="#cc0000" /></g></g>
+      <g class="body-rig">
+        <polygon points="-24,0 24,0 20,-48 -20,-48" fill="#000000" /><polygon points="-6,-48 6,-48 0,-10" fill="#ffffff" /><polygon points="-10,-48 10,-48 6,-40 -6,-40" fill="#000000" /><rect x="-8" y="-58" width="16" height="12" fill="#000000" />
+        <g transform="translate(0, -75)">
+          <circle cx="0" cy="0" r="24" fill="#000000" stroke="#cc0000" stroke-width="2" /><polygon points="0,-20 -14,0 14,0" fill="none" stroke="#cc0000" stroke-width="3" /><polygon points="-12,-2 -4,-4 -4,2 -12,4" fill="#cc0000" /><polygon points="12,-2 4,-4 4,2 12,4" fill="#cc0000" /><polygon points="0,8 -10,14 0,20 10,14" fill="none" stroke="#cc0000" stroke-width="2" />
+        </g>
+      </g>
+      <g class="arm-front"><rect x="-7" y="0" width="14" height="38" fill="#0a0a0a" /><circle cx="0" cy="40" r="8" fill="#0a0a0a" /></g>
+      <g class="leg-front"><rect x="-9" y="0" width="18" height="36" fill="#0a0a0a" /><g class="calf-front"><rect x="-8" y="0" width="16" height="38" fill="#0a0a0a" /><polygon points="-10,36 16,36 16,44 -10,44" fill="#cc0000" /></g></g>
+    </g>
+
+    <!-- Grinning Flame Sphere -->
+    <g id="fire-grin">
+      <g filter="url(#fire-glow)">
+        <g filter="url(#flame-flicker)">
+          <circle cx="0" cy="0" r="22" fill="#FF6600"/><circle cx="0" cy="0" r="18" fill="#FF9900"/><circle cx="0" cy="0" r="10" fill="#FFCC00"><animate attributeName="r" values="10;13;10" dur="0.3s" repeatCount="indefinite"/></circle>
+        </g>
+        <path d="M-18,4 Q0,26 18,4 Z" fill="#1a0500"/>
+        <path d="M-14,4 L-10,14 L-6,4 L-2,14 L2,4 L6,14 L10,4 L14,14 L18,4 Z" fill="#ffffff"/>
+        <path d="M-12,8 L-8,18 L-4,8 L0,18 L4,8 L8,18 L12,8 Z" fill="#ffffff"/>
+      </g>
+    </g>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#ffffff"/>
+
+  <g class="camera-rig">
+    <!-- Background -->
+    <g id="bg-layer" clip-path="url(#game-clip)">
+      <rect x="0" y="0" width="800" height="350" fill="#ffffff"/>
+      <polygon points="0,350 800,350 800,600 0,600" fill="url(#ground-grad)"/>
+      <g stroke="#d0d0d0" stroke-width="0.5">
+        <line x1="400" y1="350" x2="0" y2="600"/><line x1="400" y1="350" x2="200" y2="600"/><line x1="400" y1="350" x2="600" y2="600"/><line x1="400" y1="350" x2="800" y2="600"/>
+        <line x1="0" y1="400" x2="800" y2="400"/><line x1="0" y1="450" x2="800" y2="450"/><line x1="0" y1="500" x2="800" y2="500"/><line x1="0" y1="550" x2="800" y2="550"/>
+      </g>
+      <rect x="50" y="150" width="100" height="200" fill="#f0f0f0" stroke="#ddd"/><rect x="650" y="200" width="120" height="150" fill="#f0f0f0" stroke="#ddd"/>
+      <rect x="250" y="100" width="80" height="250" fill="#f5f5f5" stroke="#ddd"/><rect x="450" y="220" width="150" height="130" fill="#f0f0f0" stroke="#ddd"/>
+    </g>
+
+    <!-- Dynamic Layers -->
+    <g id="target-layer" clip-path="url(#game-clip)"></g>
+    <g id="agent-layer" clip-path="url(#game-clip)"></g>
+    <g id="salvo-layer" clip-path="url(#game-clip)"></g>
+  </g>
+
+  <!-- HUD -->
+  <rect x="600" y="0" width="200" height="600" fill="rgba(0,0,0,0.85)"/>
+  <rect x="600" y="0" width="200" height="600" filter="url(#plasma-green)"/>
+  <g style="pointer-events: none; font-family: 'Courier New', monospace;">
+    <text x="620" y="30" font-size="14" fill="#fff" class="mono">EDGE_MAFIA_NET</text>
+    <text id="hud-score" x="620" y="60" font-size="12" fill="#0f0" class="mono">SCORE: 0</text>
+    <text id="hud-targets" x="620" y="80" font-size="12" fill="#FF9900" class="mono">TARGETS: 20 / 20</text>
+    <text id="hud-agents" x="620" y="100" font-size="12" fill="#00ffff" class="mono">AGENTS: 100</text>
+    <text id="hud-bolts" x="620" y="120" font-size="10" fill="#cc0000" class="mono">RED: 35</text>
+    <text id="hud-bolts2" x="620" y="140" font-size="10" fill="#00ff00" class="mono">GREEN: 35</text>
+    <text id="hud-bolts3" x="620" y="160" font-size="10" fill="#0088ff" class="mono">BLUE: 30</text>
+    <text x="620" y="200" font-size="11" fill="#fff" class="mono">CLICK GRINS</text>
+    <text x="620" y="220" font-size="11" fill="#fff" class="mono">TO DESTROY!</text>
+    <text id="hud-wave" x="620" y="260" font-size="12" fill="#0f0" class="mono">WAVE: 1</text>
+  </g>
+
+  <script type="text/javascript">
+    <![CDATA[
+      const svgNS = "http://www.w3.org/2000/svg";
+      const xlinkNS = "http://www.w3.org/1999/xlink";
+      const targetLayer = document.getElementById("target-layer");
+      const agentLayer = document.getElementById("agent-layer");
+      const salvoLayer = document.getElementById("salvo-layer");
+
+      const AGENT_COUNT = 100;
+      const TARGET_COUNT = 20;
+
+      const targets = [];
+      const agents = [];
+      const salvos = [];
+      const agentsMap = {};
+
+      let score = 0;
+      let destroyedCount = 0;
+      let wave = 1;
+      let frameCount = 0;
+
+      function initTargets() {
+        for(let i=0; i<TARGET_COUNT; i++) {
+          let colorClass = i < 7 ? "bolt-red" : (i < 14 ? "bolt-green" : "bolt-blue");
+          let t = {
+            id: i,
+            x: 80 + Math.random() * 480,
+            y: 60 + Math.random() * 220,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: (Math.random() - 0.5) * 0.8,
+            scale: 1.2 + Math.random() * 0.8,
+            colorClass: colorClass,
+            health: 100,
+            alive: true,
+            el: null,
+            animEl: null,
+            healthEl: null
+          };
+          
+          let wrapperG = document.createElementNS(svgNS, "g");
+          let animG = document.createElementNS(svgNS, "g");
+          animG.setAttribute("class", "float1");
+          animG.style.animationDelay = (Math.random() * -9) + "s";
+          
+          let use = document.createElementNS(svgNS, "use");
+          use.setAttributeNS(xlinkNS, "href", "#fire-grin");
+          use.setAttribute("href", "#fire-grin");
+          animG.appendChild(use);
+          
+          let tint = document.createElementNS(svgNS, "circle");
+          tint.setAttribute("cx", "0"); tint.setAttribute("cy", "0"); tint.setAttribute("r", "25");
+          tint.setAttribute("fill", colorClass === "bolt-red" ? "rgba(255,0,0,0.15)" : (colorClass === "bolt-green" ? "rgba(0,255,0,0.15)" : "rgba(0,100,255,0.15)"));
+          tint.setAttribute("filter", "url(#bolt-glow)");
+          animG.appendChild(tint);
+          
+          wrapperG.appendChild(animG);
+          
+          let hBg = document.createElementNS(svgNS, "rect");
+          hBg.setAttribute("x", "-15"); hBg.setAttribute("y", "30"); hBg.setAttribute("width", "30"); hBg.setAttribute("height", "4"); hBg.setAttribute("fill", "#333");
+          wrapperG.appendChild(hBg);
+          
+          let hBar = document.createElementNS(svgNS, "rect");
+          hBar.setAttribute("x", "-15"); hBar.setAttribute("y", "30"); hBar.setAttribute("width", "30"); hBar.setAttribute("height", "4"); hBar.setAttribute("fill", "#0f0");
+          hBar.setAttribute("id", "health-"+i);
+          wrapperG.appendChild(hBar);
+          
+          targetLayer.appendChild(wrapperG);
+          
+          wrapperG.setAttribute("class", "target-entity");
+          wrapperG.addEventListener("click", () => {
+            if(t.alive) {
+              t.health -= 25;
+              if(t.health <= 0) destroyTarget(t.id);
+              
+              let flash = document.createElementNS(svgNS, "circle");
+              flash.setAttribute("cx", "0"); flash.setAttribute("cy", "0"); flash.setAttribute("r", "30"); flash.setAttribute("fill", "#fff"); flash.setAttribute("opacity", "0.8");
+              animG.appendChild(flash);
+              let animOp = document.createElementNS(svgNS, "animate");
+              animOp.setAttribute("attributeName", "opacity"); animOp.setAttribute("from", "0.8"); animOp.setAttribute("to", "0"); animOp.setAttribute("dur", "0.3s"); animOp.setAttribute("fill", "freeze");
+              flash.appendChild(animOp);
+              setTimeout(() => flash.remove(), 400);
+            }
+          });
+          
+          t.el = wrapperG;
+          t.animEl = animG;
+          t.healthEl = hBar;
+          targets.push(t);
+        }
+      }
+
+      function initAgents() {
+        for(let i=0; i<AGENT_COUNT; i++) {
+          let y = 360 + Math.random() * 190;
+          let x = Math.random() * 580;
+          let scale = 0.25 + ((y - 360) / 190) * 0.35;
+          let walkerClass = ["m1", "m2", "m3"][Math.floor(Math.random()*3)];
+          let targetId = i % TARGET_COUNT;
+          let colorClass = targets[targetId].colorClass;
+          
+          let a = { id: i, x, y, scale, walkerClass, targetId, colorClass, el: null, animEl: null };
+          
+          let wrapperG = document.createElementNS(svgNS, "g");
+          let animG = document.createElementNS(svgNS, "g");
+          animG.setAttribute("class", walkerClass);
+          animG.style.animationDelay = (Math.random() * -8) + "s";
+          
+          let use = document.createElementNS(svgNS, "use");
+          use.setAttributeNS(xlinkNS, "href", "#walker-beam");
+          use.setAttribute("href", "#walker-beam");
+          use.setAttribute("x", "0"); use.setAttribute("y", "-80"); // Shift so feet are at local 0
+          animG.appendChild(use);
+          
+          wrapperG.appendChild(animG);
+          agents.push(a);
+          
+          a.el = wrapperG;
+          a.animEl = animG;
+          agentsMap[a.id] = a;
+        }
+        agents.sort((a, b) => a.y - b.y);
+        agents.forEach(a => agentLayer.appendChild(a.el));
+      }
+
+      function initSalvos() {
+        for(let i=0; i<AGENT_COUNT; i++) {
+          let a = agents[i];
+          let s = { agentId: a.id, targetId: a.targetId, colorClass: a.colorClass, el: null };
+          
+          let line = document.createElementNS(svgNS, "line");
+          line.setAttribute("class", a.colorClass);
+          line.setAttribute("stroke-width", "2");
+          line.setAttribute("filter", "url(#bolt-glow)");
+          
+          salvoLayer.appendChild(line);
+          s.el = line;
+          salvos.push(s);
+        }
+      }
+
+      function destroyTarget(id) {
+        let t = targets[id];
+        if(!t.alive) return;
+        
+        t.alive = false; t.health = 0;
+        t.el.setAttribute("visibility", "hidden");
+        score += 100; destroyedCount++;
+        
+        let gExp = document.createElementNS(svgNS, "g");
+        gExp.setAttribute("transform", `translate(${t.x}, ${t.y}) scale(${t.scale})`);
+        targetLayer.appendChild(gExp);
+        
+        let c1 = document.createElementNS(svgNS, "circle");
+        c1.setAttribute("r", "10"); c1.setAttribute("fill", "#fff"); c1.setAttribute("filter", "url(#explode-glow)");
+        gExp.appendChild(c1);
+        let animR = document.createElementNS(svgNS, "animate"); animR.setAttribute("attributeName", "r"); animR.setAttribute("from", "10"); animR.setAttribute("to", "60"); animR.setAttribute("dur", "0.6s"); animR.setAttribute("fill", "freeze"); c1.appendChild(animR);
+        let animOp = document.createElementNS(svgNS, "animate"); animOp.setAttribute("attributeName", "opacity"); animOp.setAttribute("from", "1"); animOp.setAttribute("to", "0"); animOp.setAttribute("dur", "0.6s"); animOp.setAttribute("fill", "freeze"); c1.appendChild(animOp);
+        
+        let c2 = document.createElementNS(svgNS, "circle");
+        c2.setAttribute("r", "5"); c2.setAttribute("fill", "none"); c2.setAttribute("stroke", t.colorClass === "bolt-red" ? "#cc0000" : (t.colorClass === "bolt-green" ? "#00ff00" : "#0088ff")); c2.setAttribute("stroke-width", "4");
+        gExp.appendChild(c2);
+        let animR2 = document.createElementNS(svgNS, "animate"); animR2.setAttribute("attributeName", "r"); animR2.setAttribute("from", "5"); animR2.setAttribute("to", "80"); animR2.setAttribute("dur", "0.8s"); animR2.setAttribute("fill", "freeze"); c2.appendChild(animR2);
+        let animOp2 = document.createElementNS(svgNS, "animate"); animOp2.setAttribute("attributeName", "opacity"); animOp2.setAttribute("from", "1"); animOp2.setAttribute("to", "0"); animOp2.setAttribute("dur", "0.8s"); animOp2.setAttribute("fill", "freeze"); c2.appendChild(animOp2);
+        
+        setTimeout(() => gExp.remove(), 1000);
+        
+        salvos.forEach(s => {
+          if(s.targetId === id) {
+            let newTarget = findClosestAliveTarget(s.agentId);
+            if(newTarget) {
+              s.targetId = newTarget.id; s.colorClass = newTarget.colorClass;
+              s.el.setAttribute("class", newTarget.colorClass);
+              agentsMap[s.agentId].targetId = newTarget.id; agentsMap[s.agentId].colorClass = newTarget.colorClass;
+            } else {
+              s.el.setAttribute("visibility", "hidden"); agentsMap[s.agentId].targetId = -1;
+            }
+          }
+        });
+        
+        updateHUD();
+        if(destroyedCount >= TARGET_COUNT) { wave++; setTimeout(respawnTargets, 3000); }
+      }
+
+      function findClosestAliveTarget(agentId) {
+        let agent = agentsMap[agentId];
+        let closest = null, minDist = Infinity;
+        targets.forEach(t => {
+          if(t.alive) { let dx = t.x - agent.x; let dy = t.y - agent.y; let dist = Math.sqrt(dx*dx + dy*dy); if(dist < minDist) { minDist = dist; closest = t; } }
+        });
+        return closest;
+      }
+
+      function respawnTargets() {
+        destroyedCount = 0; score += 500;
+        targets.forEach(t => {
+          t.alive = true; t.health = 100;
+          t.x = 80 + Math.random() * 480; t.y = 60 + Math.random() * 220;
+          t.vx = (Math.random() - 0.5) * 1.5; t.vy = (Math.random() - 0.5) * 0.8;
+          t.el.setAttribute("visibility", "visible");
+          t.healthEl.setAttribute("width", "30"); t.healthEl.setAttribute("fill", "#0f0");
+        });
+        salvos.forEach(s => {
+          let tId = s.agentId % TARGET_COUNT;
+          s.targetId = tId; s.colorClass = targets[tId].colorClass;
+          s.el.setAttribute("class", targets[tId].colorClass); s.el.setAttribute("visibility", "visible");
+          agentsMap[s.agentId].targetId = tId; agentsMap[s.agentId].colorClass = targets[tId].colorClass;
+        });
+        updateHUD();
+      }
+
+      function updateHUD() {
+        let rCount = 0, gCount = 0, bCount = 0;
+        salvos.forEach(s => { if(s.colorClass === "bolt-red") rCount++; else if(s.colorClass === "bolt-green") gCount++; else if(s.colorClass === "bolt-blue") bCount++; });
+        document.getElementById("hud-score").textContent = "SCORE: " + score;
+        document.getElementById("hud-targets").textContent = "TARGETS: " + (TARGET_COUNT - destroyedCount) + " / " + TARGET_COUNT;
+        document.getElementById("hud-agents").textContent = "AGENTS: " + AGENT_COUNT;
+        document.getElementById("hud-bolts").textContent = "RED: " + rCount;
+        document.getElementById("hud-bolts2").textContent = "GREEN: " + gCount;
+        document.getElementById("hud-bolts3").textContent = "BLUE: " + bCount;
+        document.getElementById("hud-wave").textContent = "WAVE: " + wave;
+      }
+
+      function gameLoop() {
+        frameCount++;
+        targets.forEach(t => {
+          if(!t.alive) return;
+          t.x += t.vx; t.y += t.vy + Math.sin(frameCount * 0.05 + t.id) * 0.5;
+          if(t.x < 50 || t.x > 550) t.vx *= -1;
+          if(t.y < 40 || t.y > 280) t.vy *= -1;
+          t.el.setAttribute("transform", `translate(${t.x}, ${t.y}) scale(${t.scale})`);
+          
+          let attackerCount = 0;
+          salvos.forEach(s => { if(s.targetId === t.id) attackerCount++; });
+          t.health -= attackerCount * 0.15;
+          if(t.health <= 0) destroyTarget(t.id);
+          
+          let w = Math.max(0, t.health) * 0.3;
+          t.healthEl.setAttribute("width", w);
+          t.healthEl.setAttribute("fill", t.health > 50 ? "#0f0" : (t.health > 25 ? "#ff0" : "#f00"));
+        });
+        
+        agents.forEach(a => {
+          let target = targets[a.targetId];
+          if(target && target.alive) { let dx = target.x - a.x; if(Math.abs(dx) > 10) a.x += dx * 0.02; }
+          a.el.setAttribute("transform", `translate(${a.x}, ${a.y}) scale(${a.scale})`);
+        });
+        
+        salvos.forEach(s => {
+          let agent = agentsMap[s.agentId]; let target = targets[s.targetId];
+          if(!agent || !target || !target.alive) { s.el.setAttribute("visibility", "hidden"); return; }
+          s.el.setAttribute("visibility", "visible");
+          s.el.setAttribute("x1", agent.x); s.el.setAttribute("y1", agent.y - 155 * agent.scale);
+          s.el.setAttribute("x2", target.x); s.el.setAttribute("y2", target.y);
+        });
+        
+        requestAnimationFrame(gameLoop);
+      }
+
+      initTargets(); initAgents(); initSalvos(); updateHUD(); gameLoop();
+    ]]>
+  </script>
+</svg>
